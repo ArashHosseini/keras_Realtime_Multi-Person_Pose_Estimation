@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 import numpy as np
 
 
@@ -50,7 +48,11 @@ class CanonicalConfig:
         #self.data_shape = (self.height, self.width, 3)     # 368, 368, 3
         self.mask_shape = (self.height//self.stride, self.width//self.stride)  # 46, 46
         self.parts_shape = (self.height//self.stride, self.width//self.stride, self.num_layers)  # 46, 46, 57
-
+        self.scale_search = [0.5,1.0,1.5,2.0]
+        self.thre1 = 0.1
+        self.thre2 = 0.05
+        self.thre3 = 0.5
+        self.padValue = 128
         class TransformationParams:
 
             def __init__(self):
@@ -146,9 +148,7 @@ Configs["Canonical"] = CanonicalConfig
 
 
 def GetConfig(config_name):
-
     config = Configs[config_name]()
-
     dct = config.parts[:]
     dct = [None]*(config.num_layers-len(dct)) + dct
 

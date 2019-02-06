@@ -1,20 +1,20 @@
 import numpy as np
 from io import StringIO
 import PIL.Image
-from IPython.display import Image, display
+#from IPython.display import Image, display
 
 def showBGRimage(a, fmt='jpeg'):
     a = np.uint8(np.clip(a, 0, 255))
     a[:,:,[0,2]] = a[:,:,[2,0]] # for B,G,R order
     f = StringIO()
     PIL.Image.fromarray(a).save(f, fmt)
-    display(Image(data=f.getvalue()))
+    #display(Image(data=f.getvalue()))
 
 def showmap(a, fmt='png'):
     a = np.uint8(np.clip(a, 0, 255))
     f = StringIO()
     PIL.Image.fromarray(a).save(f, fmt)
-    display(Image(data=f.getvalue()))
+    #display(Image(data=f.getvalue()))
 
 #def checkparam(param):
 #    octave = param['octave']

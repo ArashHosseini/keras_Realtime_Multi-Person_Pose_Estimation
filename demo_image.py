@@ -4,11 +4,11 @@ import math
 import time
 import numpy as np
 import util
-from config_reader import config_reader
+import config
 from scipy.ndimage.filters import gaussian_filter
 from model import get_testing_model
-
-
+import json
+import os
 # find connection in the specified sequence, center 29 is in the position 15
 limbSeq = [[2, 3], [2, 6], [3, 4], [4, 5], [6, 7], [7, 8], [2, 9], [9, 10], \
            [10, 11], [2, 12], [12, 13], [13, 14], [2, 1], [1, 15], [15, 17], \
@@ -27,10 +27,10 @@ colors = [[255, 0, 0], [255, 85, 0], [255, 170, 0], [255, 255, 0], [170, 255, 0]
           [170, 0, 255], [255, 0, 255], [255, 0, 170], [255, 0, 85]]
 
 
-def process (input_image, params, model_params):
-
+def process (input_image, params):
     oriImg = cv2.imread(input_image)  # B,G,R order
-    multiplier = [x * model_params['boxsize'] / oriImg.shape[0] for x in params['scale_search']]
+    print (oriImg.shape[0], params.width)
+    multiplier = [x * params.width / oriImg.shape[0] for x in params.scale_search]
 
     heatmap_avg = np.zeros((oriImg.shape[0], oriImg.shape[1], 19))
     paf_avg = np.zeros((oriImg.shape[0], oriImg.shape[1], 38))
@@ -39,8 +39,8 @@ def process (input_image, params, model_params):
         scale = multiplier[m]
 
         imageToTest = cv2.resize(oriImg, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-        imageToTest_padded, pad = util.padRightDownCorner(imageToTest, model_params['stride'],
-                                                          model_params['padValue'])
+        imageToTest_padded, pad = util.padRightDownCorner(imageToTest, params.stride,
+                                                          params.padValue)
 
         input_img = np.transpose(np.float32(imageToTest_padded[:,:,:,np.newaxis]), (3,0,1,2)) # required shape (1, width, height, channels)
 
@@ -48,14 +48,14 @@ def process (input_image, params, model_params):
 
         # extract outputs, resize, and remove padding
         heatmap = np.squeeze(output_blobs[1])  # output 1 is heatmaps
-        heatmap = cv2.resize(heatmap, (0, 0), fx=model_params['stride'], fy=model_params['stride'],
+        heatmap = cv2.resize(heatmap, (0, 0), fx=params.stride, fy=params.stride,
                              interpolation=cv2.INTER_CUBIC)
         heatmap = heatmap[:imageToTest_padded.shape[0] - pad[2], :imageToTest_padded.shape[1] - pad[3],
                   :]
         heatmap = cv2.resize(heatmap, (oriImg.shape[1], oriImg.shape[0]), interpolation=cv2.INTER_CUBIC)
 
         paf = np.squeeze(output_blobs[0])  # output 0 is PAFs
-        paf = cv2.resize(paf, (0, 0), fx=model_params['stride'], fy=model_params['stride'],
+        paf = cv2.resize(paf, (0, 0), fx=params.stride, fy=params.stride,
                          interpolation=cv2.INTER_CUBIC)
         paf = paf[:imageToTest_padded.shape[0] - pad[2], :imageToTest_padded.shape[1] - pad[3], :]
         paf = cv2.resize(paf, (oriImg.shape[1], oriImg.shape[0]), interpolation=cv2.INTER_CUBIC)
@@ -80,7 +80,7 @@ def process (input_image, params, model_params):
         map_down[:, :-1] = map[:, 1:]
 
         peaks_binary = np.logical_and.reduce(
-            (map >= map_left, map >= map_right, map >= map_up, map >= map_down, map > params['thre1']))
+            (map >= map_left, map >= map_right, map >= map_up, map >= map_down, map > params.thre1))
         peaks = list(zip(np.nonzero(peaks_binary)[1], np.nonzero(peaks_binary)[0]))  # note reverse
         peaks_with_score = [x + (map_ori[x[1], x[0]],) for x in peaks]
         id = range(peak_counter, peak_counter + len(peaks))
@@ -124,7 +124,7 @@ def process (input_image, params, model_params):
                     score_midpts = np.multiply(vec_x, vec[0]) + np.multiply(vec_y, vec[1])
                     score_with_dist_prior = sum(score_midpts) / len(score_midpts) + min(
                         0.5 * oriImg.shape[0] / norm - 1, 0)
-                    criterion1 = len(np.nonzero(score_midpts > params['thre2'])[0]) > 0.8 * len(
+                    criterion1 = len(np.nonzero(score_midpts > params.thre2)[0]) > 0.8 * len(
                         score_midpts)
                     criterion2 = score_with_dist_prior > 0
                     if criterion1 and criterion2:
@@ -199,12 +199,17 @@ def process (input_image, params, model_params):
         if subset[i][-1] < 4 or subset[i][-2] / subset[i][-1] < 0.4:
             deleteIdx.append(i)
     subset = np.delete(subset, deleteIdx, axis=0)
-
+    flat = [0.0 for i in range(36)]
+    dc = {"people":[]}
     canvas = cv2.imread(input_image)  # B,G,R order
     for i in range(18):
         for j in range(len(all_peaks[i])):
-            cv2.circle(canvas, all_peaks[i][j][0:2], 4, colors[i], thickness=-1)
+            print (all_peaks[i][j][0:2])
 
+            flat[i*2] = int(all_peaks[i][j][0:2][0])
+            flat[i*2+1] = int(all_peaks[i][j][0:2][1])
+            cv2.circle(canvas, all_peaks[i][j][0:2], 4, colors[i], thickness=-1)
+    dc["people"].append({"pose_keypoints_2d" : flat})
     stickwidth = 4
 
     for i in range(17):
@@ -222,16 +227,16 @@ def process (input_image, params, model_params):
             polygon = cv2.ellipse2Poly((int(mY), int(mX)), (int(length / 2), stickwidth), int(angle), 0,
                                        360, 1)
             cv2.fillConvexPoly(cur_canvas, polygon, colors[i])
+            #print (cur_canvas)
             canvas = cv2.addWeighted(canvas, 0.4, cur_canvas, 0.6, 0)
 
-    return canvas
+    return canvas, dc
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--image', type=str, required=True, help='input image')
     parser.add_argument('--output', type=str, default='result.png', help='output image')
     parser.add_argument('--model', type=str, default='model/keras/model.h5', help='path to the weights file')
-
     args = parser.parse_args()
     input_image = args.image
     output = args.output
@@ -241,22 +246,22 @@ if __name__ == '__main__':
     print('start processing...')
 
     # load model
-
     # authors of original model don't use
     # vgg normalization (subtracting mean) on input images
-    model = get_testing_model()
+    model = get_testing_model(38,19)
     model.load_weights(keras_weights_file)
 
     # load config
-    params, model_params = config_reader()
-
-    # generate image with body parts
-    canvas = process(input_image, params, model_params)
+    _config = config.GetConfig("Canonical")
+    canvas, pose_keypoints = process(input_image, _config)
 
     toc = time.time()
     print ('processing time is %.5f' % (toc - tic))
 
     cv2.imwrite(output, canvas)
+    frame = 0
+    with open(os.path.join("./json", '{0}_keypoints.json'.format(str(frame).zfill(12))), 'w') as outfile:
+         json.dump(pose_keypoints, outfile)
 
     cv2.destroyAllWindows()
 
