@@ -27,9 +27,14 @@ colors = [[255, 0, 0], [255, 85, 0], [255, 170, 0], [255, 255, 0], [170, 255, 0]
           [170, 0, 255], [255, 0, 255], [255, 0, 170], [255, 0, 85]]
 
 
-def process (input_image, params):
-    oriImg = cv2.imread(input_image)  # B,G,R order
-    print (oriImg.shape[0], params.width)
+
+
+def process (input_image, params, model):
+
+    oriImg = input_image
+    if isinstance(input_image, str):
+        oriImg = cv2.imread(input_image)  # B,G,R order
+
     multiplier = [x * params.width / oriImg.shape[0] for x in params.scale_search]
 
     heatmap_avg = np.zeros((oriImg.shape[0], oriImg.shape[1], 19))
@@ -201,11 +206,9 @@ def process (input_image, params):
     subset = np.delete(subset, deleteIdx, axis=0)
     flat = [0.0 for i in range(36)]
     dc = {"people":[]}
-    canvas = cv2.imread(input_image)  # B,G,R order
+    canvas = oriImg  # B,G,R order
     for i in range(18):
         for j in range(len(all_peaks[i])):
-            print (all_peaks[i][j][0:2])
-
             flat[i*2] = int(all_peaks[i][j][0:2][0])
             flat[i*2+1] = int(all_peaks[i][j][0:2][1])
             cv2.circle(canvas, all_peaks[i][j][0:2], 4, colors[i], thickness=-1)
@@ -248,12 +251,12 @@ if __name__ == '__main__':
     # load model
     # authors of original model don't use
     # vgg normalization (subtracting mean) on input images
+
     model = get_testing_model(38,19)
     model.load_weights(keras_weights_file)
-
     # load config
     _config = config.GetConfig("Canonical")
-    canvas, pose_keypoints = process(input_image, _config)
+    canvas, pose_keypoints = process(input_image, _config, model)
 
     toc = time.time()
     print ('processing time is %.5f' % (toc - tic))
